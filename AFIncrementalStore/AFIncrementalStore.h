@@ -225,6 +225,13 @@
 
 /**
  Returns the attributes representation of an entity from the specified managed object. This method is used to get the attributes of the representation from its managed object.
+ Used for entity inheritance. Return name of subentity if desired by inspecting representation and suggestedEntity
+ */
+- (NSString *)entityNameForRepresentation:(NSDictionary *)representation
+                            suggestEntity:(NSEntityDescription *)suggestedEntity;
+
+
+/**
  
  @discussion For example, if the representation sent to `POST /products` or `PUT /products/123` had a `description` field that corresponded with the `productDescription` attribute in its Core Data model, this method would set the value of the `productDescription` field to the value of the `description` key in representation/dictionary.
  

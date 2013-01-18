@@ -249,7 +249,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
 #pragma mark -
 
 - (BOOL)insertOrUpdateObjectsFromRepresentations:(id)representationOrArrayOfRepresentations
-                                        ofEntity:(NSEntityDescription *)entity
+                                        ofEntity:(NSEntityDescription *)defaultEntity
                                     fromResponse:(NSHTTPURLResponse *)response
                                      withContext:(NSManagedObjectContext *)context
                                            error:(NSError *__autoreleasing *)error
@@ -280,6 +280,13 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     NSMutableArray *mutableBackingObjects = [NSMutableArray arrayWithCapacity:numberOfRepresentations];
     
     for (NSDictionary *representation in representations) {
+        NSEntityDescription *entity = defaultEntity;
+        if ([self.HTTPClient respondsToSelector:@selector(entityNameForRepresentation:suggestEntity:)]) {
+            NSString *entityName = [self.HTTPClient entityNameForRepresentation:representation suggestEntity:defaultEntity];
+            if (![entityName isEqualToString:entity.name]) {
+                entity = [NSEntityDescription entityForName:entityName inManagedObjectContext:context];
+            }
+        }
         NSString *resourceIdentifier = [self.HTTPClient resourceIdentifierForRepresentation:representation ofEntity:entity fromResponse:response];
         NSDictionary *attributes = [self.HTTPClient attributesForRepresentation:representation ofEntity:entity fromResponse:response];
         
@@ -411,32 +418,28 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
 	backingFetchRequest.entity = [NSEntityDescription entityForName:fetchRequest.entityName inManagedObjectContext:backingContext];
 
     switch (fetchRequest.resultType) {
+        case NSManagedObjectIDResultType:
         case NSManagedObjectResultType: {
-            backingFetchRequest.resultType = NSDictionaryResultType;
-            backingFetchRequest.propertiesToFetch = [NSArray arrayWithObject:kAFIncrementalStoreResourceIdentifierAttributeName];
-            NSArray *results = [backingContext executeFetchRequest:backingFetchRequest error:error];
-
-            NSMutableArray *mutableObjects = [NSMutableArray arrayWithCapacity:[results count]];
-            for (NSString *resourceIdentifier in [results valueForKeyPath:kAFIncrementalStoreResourceIdentifierAttributeName]) {
-                NSManagedObjectID *objectID = [self objectIDForEntity:fetchRequest.entity withResourceIdentifier:resourceIdentifier];
-                NSManagedObject *object = [context objectWithID:objectID];
-                object.af_resourceIdentifier = resourceIdentifier;
-                [mutableObjects addObject:object];
-            }
+            backingFetchRequest.resultType = NSManagedObjectIDResultType;
             
-            return mutableObjects;
-        }
-        case NSManagedObjectIDResultType: {
             NSArray *backingObjectIDs = [backingContext executeFetchRequest:backingFetchRequest error:error];
-            NSMutableArray *managedObjectIDs = [NSMutableArray arrayWithCapacity:[backingObjectIDs count]];
+            NSMutableArray *mutableResults = [NSMutableArray arrayWithCapacity:[backingObjectIDs count]];
             
             for (NSManagedObjectID *backingObjectID in backingObjectIDs) {
                 NSManagedObject *backingObject = [backingContext objectWithID:backingObjectID];
                 NSString *resourceID = [backingObject valueForKey:kAFIncrementalStoreResourceIdentifierAttributeName];
-                [managedObjectIDs addObject:[self objectIDForEntity:fetchRequest.entity withResourceIdentifier:resourceID]];
+                NSManagedObjectID *objectID = [self objectIDForEntity:backingObject.entity withResourceIdentifier:resourceID];
+
+                if (fetchRequest.resultType == NSManagedObjectIDResultType) {
+                    [mutableResults addObject:objectID];
+                } else {
+                    NSManagedObject *object = [context objectWithID:objectID];
+                    object.af_resourceIdentifier = resourceID;
+                    [mutableResults addObject:object];
+                }
             }
             
-            return managedObjectIDs;
+            return mutableResults;
         }
         case NSDictionaryResultType:
         case NSCountResultType:
