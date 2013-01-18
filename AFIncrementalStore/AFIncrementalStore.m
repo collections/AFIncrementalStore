@@ -253,7 +253,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
 #pragma mark -
 
 - (BOOL)insertOrUpdateObjectsFromRepresentations:(id)representationOrArrayOfRepresentations
-                                        ofEntity:(NSEntityDescription *)entity
+                                        ofEntity:(NSEntityDescription *)defaultEntity
                                     fromResponse:(NSHTTPURLResponse *)response
                                            error:(NSError *__autoreleasing *)error
                                  completionBlock:(void (^)(NSArray *backingObjects))completionBlock
@@ -283,7 +283,12 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     NSMutableArray *mutableBackingObjects = [NSMutableArray arrayWithCapacity:numberOfRepresentations];
     
     for (NSDictionary *representation in representations) {
+        NSEntityDescription *entity = defaultEntity;
+        if ([self.HTTPClient respondsToSelector:@selector(entityForRepresentation:suggestEntity:)]) {
+            entity = [self.HTTPClient entityForRepresentation:representation suggestEntity:defaultEntity];
+        }
         NSString *resourceIdentifier = [self.HTTPClient resourceIdentifierForRepresentation:representation ofEntity:entity fromResponse:response];
+        NSAssert(resourceIdentifier, @"Resource Identifier Must not be nil");
         NSManagedObjectID *backingObjectID = [self objectIDForBackingObjectForEntity:entity withResourceIdentifier:resourceIdentifier];
         
         __block NSManagedObject *backingObject = nil;
@@ -387,32 +392,28 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
 	backingFetchRequest.entity = [NSEntityDescription entityForName:fetchRequest.entityName inManagedObjectContext:backingContext];
 
     switch (fetchRequest.resultType) {
+        case NSManagedObjectIDResultType:
         case NSManagedObjectResultType: {
-            backingFetchRequest.resultType = NSDictionaryResultType;
-            backingFetchRequest.propertiesToFetch = [NSArray arrayWithObject:kAFIncrementalStoreResourceIdentifierAttributeName];
-            NSArray *results = [backingContext executeFetchRequest:backingFetchRequest error:error];
-
-            NSMutableArray *mutableObjects = [NSMutableArray arrayWithCapacity:[results count]];
-            for (NSString *resourceIdentifier in [results valueForKeyPath:kAFIncrementalStoreResourceIdentifierAttributeName]) {
-                NSManagedObjectID *objectID = [self objectIDForEntity:fetchRequest.entity withResourceIdentifier:resourceIdentifier];
-                NSManagedObject *object = [context objectWithID:objectID];
-                object.af_resourceIdentifier = resourceIdentifier;
-                [mutableObjects addObject:object];
-            }
+            backingFetchRequest.resultType = NSManagedObjectIDResultType;
             
-            return mutableObjects;
-        }
-        case NSManagedObjectIDResultType: {
             NSArray *backingObjectIDs = [backingContext executeFetchRequest:backingFetchRequest error:error];
-            NSMutableArray *managedObjectIDs = [NSMutableArray arrayWithCapacity:[backingObjectIDs count]];
+            NSMutableArray *mutableResults = [NSMutableArray arrayWithCapacity:[backingObjectIDs count]];
             
             for (NSManagedObjectID *backingObjectID in backingObjectIDs) {
                 NSManagedObject *backingObject = [backingContext objectWithID:backingObjectID];
                 NSString *resourceID = [backingObject valueForKey:kAFIncrementalStoreResourceIdentifierAttributeName];
-                [managedObjectIDs addObject:[self objectIDForEntity:fetchRequest.entity withResourceIdentifier:resourceID]];
+                NSManagedObjectID *objectID = [self objectIDForEntity:backingObject.entity withResourceIdentifier:resourceID];
+
+                if (fetchRequest.resultType == NSManagedObjectIDResultType) {
+                    [mutableResults addObject:objectID];
+                } else {
+                    NSManagedObject *object = [context objectWithID:objectID];
+                    object.af_resourceIdentifier = resourceID;
+                    [mutableResults addObject:object];
+                }
             }
             
-            return managedObjectIDs;
+            return mutableResults;
         }
         case NSDictionaryResultType:
         case NSCountResultType:
@@ -791,15 +792,15 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
         id backingRelationshipObject = [backingObject valueForKeyPath:relationship.name];
         if ([relationship isToMany]) {
             NSMutableArray *mutableObjects = [NSMutableArray arrayWithCapacity:[backingRelationshipObject count]];
-            for (NSString *resourceIdentifier in [backingRelationshipObject valueForKeyPath:kAFIncrementalStoreResourceIdentifierAttributeName]) {
-                NSManagedObjectID *objectID = [self objectIDForEntity:relationship.destinationEntity withResourceIdentifier:resourceIdentifier];
+            for (NSManagedObject *backingDestObject in backingRelationshipObject) {
+                NSString *resourceIdentifier = [backingDestObject valueForKey:kAFIncrementalStoreResourceIdentifierAttributeName];
+                NSManagedObjectID *objectID = [self objectIDForEntity:backingDestObject.entity withResourceIdentifier:resourceIdentifier];
                 [mutableObjects addObject:objectID];
             }
-                        
             return mutableObjects;            
         } else {
             NSString *resourceIdentifier = [backingRelationshipObject valueForKeyPath:kAFIncrementalStoreResourceIdentifierAttributeName];
-            NSManagedObjectID *objectID = [self objectIDForEntity:relationship.destinationEntity withResourceIdentifier:resourceIdentifier];
+            NSManagedObjectID *objectID = [self objectIDForEntity:[backingRelationshipObject entity] withResourceIdentifier:resourceIdentifier];
             
             return objectID ?: [NSNull null];
         }

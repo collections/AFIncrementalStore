@@ -224,6 +224,13 @@
 ///-----------------------
 
 /**
+ Returns the attributes representation of an entity from the specified managed object. This method is used to get the attributes of the representation from its managed object.
+ Used for entity inheritance. Return name of subentity if desired by inspecting representation and suggestedEntity
+ */
+- (NSEntityDescription *)entityForRepresentation:(NSDictionary *)representation
+                                   suggestEntity:(NSEntityDescription *)suggestedEntity;
+
+/**
  
  */
 - (NSMutableURLRequest *)requestForInsertedObject:(NSManagedObject *)insertedObject;
