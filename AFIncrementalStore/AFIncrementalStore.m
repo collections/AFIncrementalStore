@@ -360,7 +360,10 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                         NSManagedObjectID *objectID = [self objectIDForEntity:backingObject.entity withResourceIdentifier:resourceIdentifier];
                         NSManagedObject *managedObject = [context existingObjectWithID:objectID error:NULL];
                         if (managedObject) {
-                            [context refreshObject:managedObject mergeChanges:NO];
+                            if (!managedObject.isFault) {
+                                [context refreshObject:managedObject mergeChanges:NO];
+                                [managedObject willAccessValueForKey:nil];
+                            }
                             [fetchedObjects addObject:managedObject];
                         }
                     }
@@ -477,11 +480,14 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                 [context obtainPermanentIDsForObjects:[NSArray arrayWithObject:insertedObject] error:nil];
                 [insertedObject didChangeValueForKey:@"objectID"];
                 
-                [context refreshObject:insertedObject mergeChanges:NO];
+                if (!insertedObject.isFault) {
+                    [context refreshObject:insertedObject mergeChanges:NO];
+                    [insertedObject willAccessValueForKey:nil];
+                }
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Insert Error: %@", error);
             }];
-            
+            NSLog(@"Inserting %@+%@", insertedObject.entity.name, insertedObject.af_resourceIdentifier);
             [mutableOperations addObject:operation];
         }
     }
@@ -508,13 +514,18 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     [self updateBackingObject:backingObject withAttributeAndRelationshipValuesFromManagedObject:updatedObject];
                     [backingContext save:nil];
                 }];
-                
-                [context refreshObject:updatedObject mergeChanges:NO];
+                if (!updatedObject.isFault) {
+                    [context refreshObject:updatedObject mergeChanges:NO];
+                    [updatedObject willAccessValueForKey:nil];
+                }
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Update Error: %@", error);
-                [context refreshObject:updatedObject mergeChanges:NO];
+                if (!updatedObject.isFault) {
+                    [context refreshObject:updatedObject mergeChanges:NO];
+                    [updatedObject willAccessValueForKey:nil];
+                }
             }];
-            
+            NSLog(@"Updating %@+%@", updatedObject.entity.name, updatedObject.af_resourceIdentifier);
             [mutableOperations addObject:operation];
         }
     }
@@ -542,7 +553,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Delete Error: %@", error);
             }];
-            
+            NSLog(@"Deleting %@+%@", deletedObject.entity.name, deletedObject.af_resourceIdentifier);
             [mutableOperations addObject:operation];
         }
     }
@@ -640,6 +651,8 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                                                error:(NSError *__autoreleasing *)error
 {
     NSAssert([NSThread isMainThread], @"Method is not yet thread safe");
+    NSString *resourceIdentifier = AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID]);
+    NSString *requestHash = [NSString stringWithFormat:@"%@+%@", objectID.entity.name, resourceIdentifier];
     
     NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] initWithEntityName:[[objectID entity] name]];
     fetchRequest.resultType = NSDictionaryResultType;
@@ -657,8 +670,6 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     NSDictionary *attributeValues = [results lastObject] ?: [NSDictionary dictionary];
     NSIncrementalStoreNode *node = [[NSIncrementalStoreNode alloc] initWithObjectID:objectID withValues:attributeValues version:1];
     
-    NSString *resourceIdentifier = AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID]);
-    NSString *requestHash = [NSString stringWithFormat:@"%@+%@", objectID.entity.name, resourceIdentifier];
 
     if ([self.HTTPClient respondsToSelector:@selector(shouldFetchRemoteAttributeValuesForObjectWithID:inManagedObjectContext:)] && [self.HTTPClient shouldFetchRemoteAttributeValuesForObjectWithID:objectID inManagedObjectContext:context]) {
         if (attributeValues) {
@@ -694,20 +705,24 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     }
                     [context performBlockAndWait:^{
                         NSManagedObject *managedObject = [context existingObjectWithID:objectID error:error];
-                        [context refreshObject:managedObject mergeChanges:NO];
+                        if (!managedObject.isFault) {
+                            [context refreshObject:managedObject mergeChanges:NO];
+                            [managedObject willAccessValueForKey:nil];
+                        }
                     }];
                     [_refreshingObjects performSelector:@selector(removeObject:) withObject:requestHash afterDelay:AFDelta];
-                    
+                    NSLog(@"Remotely fulfill object %@", requestHash);
                 } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                     [_refreshingObjects performSelector:@selector(removeObject:) withObject:requestHash afterDelay:AFDelta];
                     NSLog(@"Error: %@, %@", operation, error);
                 }];
                 [_refreshingObjects addObject:requestHash];
                 [self.HTTPClient enqueueHTTPRequestOperation:operation];
+                NSLog(@"Request remote object %@", requestHash);
             }
         }
     }
-    
+    NSLog(@"Locally fulfill object  %@", requestHash);
     return node;
 }
 
@@ -719,11 +734,13 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     NSAssert([NSThread isMainThread], @"Method is not yet thread safe");
     NSString *resourceIdentifier = AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID]);
     NSString *requestHash = [NSString stringWithFormat:@"%@+%@+%@", objectID.entity.name, resourceIdentifier, relationship.name];
+    
+//    NSLog(@"Received relationship request %@", requestHash);
     if (![_refreshingRelationships containsObject:requestHash] && [self.HTTPClient respondsToSelector:@selector(shouldFetchRemoteValuesForRelationship:forObjectWithID:inManagedObjectContext:)] && [self.HTTPClient shouldFetchRemoteValuesForRelationship:relationship forObjectWithID:objectID inManagedObjectContext:context]) {
         NSURLRequest *request = [self.HTTPClient requestWithMethod:@"GET" pathForRelationship:relationship forObjectWithID:objectID withContext:context];
         
         if ([request URL]) {
-            NSLog(@"Making request with hash %@", requestHash);
+            NSLog(@"Requesting remote relationship %@", requestHash);
             AFHTTPRequestOperation *operation = [self.HTTPClient HTTPRequestOperationWithRequest:request success:^(AFHTTPRequestOperation *operation, id responseObject) {
                 id representationOrArrayOfRepresentations = [self.HTTPClient representationOrArrayOfRepresentationsFromResponseObject:responseObject];
                 [self insertOrUpdateObjectsFromRepresentations:representationOrArrayOfRepresentations ofEntity:relationship.destinationEntity fromResponse:operation.response error:error completionBlock:^(NSArray *backingObjects) {
@@ -743,10 +760,13 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     if (![[self backingManagedObjectContext] save:error]) {
                         @throw [NSException exceptionWithName:NSInternalInconsistencyException reason:[*error localizedFailureReason] userInfo:[NSDictionary dictionaryWithObject:*error forKey:NSUnderlyingErrorKey]];
                     }
-                    
+                    NSLog(@"Remotely fulfill relationship  %@", requestHash);
                     [context performBlockAndWait:^{
                         NSManagedObject *managedObject = [context existingObjectWithID:objectID error:NULL];
-                        [context refreshObject:managedObject mergeChanges:NO];
+                        if (!managedObject.isFault) {
+                            [context refreshObject:managedObject mergeChanges:NO];
+                            [managedObject willAccessValueForKey:nil];
+                        }
                     }];
                     // TODO: FIX potential race conditions when not on main thread.
                     [_refreshingRelationships performSelector:@selector(removeObject:) withObject:requestHash afterDelay:AFDelta];
@@ -760,7 +780,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
             [self.HTTPClient enqueueHTTPRequestOperation:operation];
         }
     }
-    
+    NSLog(@"Locally fulfill relationship   %@", requestHash);
     NSManagedObjectID *backingObjectID = [self objectIDForBackingObjectForEntity:[objectID entity] withResourceIdentifier:AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID])];
     NSManagedObject *backingObject = (backingObjectID == nil) ? nil : [[self backingManagedObjectContext] existingObjectWithID:backingObjectID error:nil];
     
