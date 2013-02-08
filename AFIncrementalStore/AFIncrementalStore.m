@@ -647,8 +647,6 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     NSAssert([NSThread isMainThread], @"Method is not yet thread safe");
     NSString *resourceIdentifier = AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID]);
     NSString *requestHash = [NSString stringWithFormat:@"%@+%@", objectID.entity.name, resourceIdentifier];
-    if ([objectID.entity.name isEqualToString:@"EUser"])
-        NSLog(@"hmm");
     
     NSEntityDescription *backingEntity = [NSEntityDescription entityForName:[[objectID entity] name] inManagedObjectContext:context];
     NSMutableArray *propertiesToFetch = [NSMutableArray arrayWithObject:kAFIncrementalStoreLastModifiedAttributeName];
@@ -680,8 +678,12 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     for (NSRelationshipDescription *relationship in backingEntity.relationshipsByName.allValues) {
         if (!relationship.isToMany) {
             NSManagedObject *backingDestObject = [backingObject valueForKey:relationship.name];
-            NSString *resourceIdentifier = [backingDestObject valueForKey:kAFIncrementalStoreResourceIdentifierAttributeName];
-            values[relationship.name] = [self objectIDForEntity:backingDestObject.entity withResourceIdentifier:resourceIdentifier];
+            if (!backingDestObject) {
+                values[relationship.name] = [NSNull null];
+            } else {                
+                NSString *resourceIdentifier = [backingDestObject valueForKey:kAFIncrementalStoreResourceIdentifierAttributeName];
+                values[relationship.name] = [self objectIDForEntity:backingDestObject.entity withResourceIdentifier:resourceIdentifier];
+            }
         }
     }
 
@@ -739,7 +741,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
         }
     }
 //    if (![requestHash hasPrefix:@"EType"] && ![requestHash hasPrefix:@"EService"] && ![requestHash hasPrefix:@"EProvider"])
-    NSLog(@"Locally fulfill object  %@", requestHash);
+//    NSLog(@"Locally fulfill object  %@", requestHash);
     
     return node;
 }
@@ -801,7 +803,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
         }
     }
 
-    NSLog(@"Locally fulfill relationship   %@", requestHash);
+//    NSLog(@"Locally fulfill relationship   %@", requestHash);
     NSManagedObjectID *backingObjectID = [self objectIDForBackingObjectForEntity:[objectID entity] withResourceIdentifier:AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID])];
     NSManagedObject *backingObject = (backingObjectID == nil) ? nil : [[self backingManagedObjectContext] existingObjectWithID:backingObjectID error:nil];
     
