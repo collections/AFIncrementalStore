@@ -487,7 +487,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Insert Error: %@", error);
             }];
-            NSLog(@"Inserting %@+%@", insertedObject.entity.name, insertedObject.af_resourceIdentifier);
+            NSLog(@"INSERT %@+%@", insertedObject.entity.name, insertedObject.af_resourceIdentifier);
             [mutableOperations addObject:operation];
         }
     }
@@ -507,7 +507,8 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
             }
             
             AFHTTPRequestOperation *operation = [self.HTTPClient HTTPRequestOperationWithRequest:request success:^(AFHTTPRequestOperation *operation, id responseObject) {
-                [updatedObject setValuesForKeysWithDictionary:[self.HTTPClient attributesForRepresentation:responseObject ofEntity:updatedObject.entity fromResponse:operation.response]];
+                id representation = [self.HTTPClient representationOrArrayOfRepresentationsFromResponseObject:responseObject];
+                [updatedObject setValuesForKeysWithDictionary:[self.HTTPClient attributesForRepresentation:representation ofEntity:updatedObject.entity fromResponse:operation.response]];
                 
                 [backingContext performBlockAndWait:^{
                     NSManagedObject *backingObject = [backingContext existingObjectWithID:backingObjectID error:nil];
@@ -525,7 +526,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     [updatedObject willAccessValueForKey:nil];
                 }
             }];
-            NSLog(@"Updating %@+%@", updatedObject.entity.name, updatedObject.af_resourceIdentifier);
+            NSLog(@"UPDATE %@+%@", updatedObject.entity.name, updatedObject.af_resourceIdentifier);
             [mutableOperations addObject:operation];
         }
     }
@@ -553,7 +554,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Delete Error: %@", error);
             }];
-            NSLog(@"Deleting %@+%@", deletedObject.entity.name, deletedObject.af_resourceIdentifier);
+            NSLog(@"DELETE %@+%@", deletedObject.entity.name, deletedObject.af_resourceIdentifier);
             [mutableOperations addObject:operation];
         }
     }
@@ -736,7 +737,9 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     NSString *requestHash = [NSString stringWithFormat:@"%@+%@+%@", objectID.entity.name, resourceIdentifier, relationship.name];
     
 //    NSLog(@"Received relationship request %@", requestHash);
-    if (![_refreshingRelationships containsObject:requestHash] && [self.HTTPClient respondsToSelector:@selector(shouldFetchRemoteValuesForRelationship:forObjectWithID:inManagedObjectContext:)] && [self.HTTPClient shouldFetchRemoteValuesForRelationship:relationship forObjectWithID:objectID inManagedObjectContext:context]) {
+    NSManagedObject *managedObject = [context existingObjectWithID:objectID error:NULL];
+
+    if (!managedObject.isDeleted && ![_refreshingRelationships containsObject:requestHash] && [self.HTTPClient respondsToSelector:@selector(shouldFetchRemoteValuesForRelationship:forObjectWithID:inManagedObjectContext:)] && [self.HTTPClient shouldFetchRemoteValuesForRelationship:relationship forObjectWithID:objectID inManagedObjectContext:context]) {
         NSURLRequest *request = [self.HTTPClient requestWithMethod:@"GET" pathForRelationship:relationship forObjectWithID:objectID withContext:context];
         
         if ([request URL]) {
