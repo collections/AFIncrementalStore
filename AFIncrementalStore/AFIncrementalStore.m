@@ -647,12 +647,21 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     NSAssert([NSThread isMainThread], @"Method is not yet thread safe");
     NSString *resourceIdentifier = AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID]);
     NSString *requestHash = [NSString stringWithFormat:@"%@+%@", objectID.entity.name, resourceIdentifier];
+    if ([objectID.entity.name isEqualToString:@"EUser"])
+        NSLog(@"hmm");
     
-    NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] initWithEntityName:[[objectID entity] name]];
-    fetchRequest.resultType = NSDictionaryResultType;
+    NSEntityDescription *backingEntity = [NSEntityDescription entityForName:[[objectID entity] name] inManagedObjectContext:context];
+    NSMutableArray *propertiesToFetch = [NSMutableArray arrayWithObject:kAFIncrementalStoreLastModifiedAttributeName];
+    [propertiesToFetch addObjectsFromArray:backingEntity.attributesByName.allKeys];
+    for (NSRelationshipDescription *relationship in backingEntity.relationshipsByName.allValues)
+        if (!relationship.isToMany)
+            [propertiesToFetch addObject:relationship.name];
+
+    NSFetchRequest *fetchRequest = [[NSFetchRequest alloc] initWithEntityName:backingEntity.name];
+    fetchRequest.resultType = NSManagedObjectResultType;
     fetchRequest.fetchLimit = 1;
     fetchRequest.includesSubentities = NO;
-    fetchRequest.propertiesToFetch = [[[[NSEntityDescription entityForName:fetchRequest.entityName inManagedObjectContext:context] attributesByName] allKeys] arrayByAddingObject:kAFIncrementalStoreLastModifiedAttributeName];
+    fetchRequest.propertiesToFetch = propertiesToFetch;
     fetchRequest.predicate = [NSPredicate predicateWithFormat:@"%K = %@", kAFIncrementalStoreResourceIdentifierAttributeName, AFResourceIdentifierFromReferenceObject([self referenceObjectForObjectID:objectID])];
     
     __block NSArray *results;
@@ -660,10 +669,23 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
     [backingContext performBlockAndWait:^{
         results = [backingContext executeFetchRequest:fetchRequest error:error];
     }];
-    
-    NSDictionary *attributeValues = [results lastObject] ?: [NSDictionary dictionary];
-    
-    NSIncrementalStoreNode *node = [[NSIncrementalStoreNode alloc] initWithObjectID:objectID withValues:attributeValues version:1];
+    NSManagedObject *backingObject = results.lastObject;
+    NSMutableDictionary *attributeValues = [[NSMutableDictionary alloc] init];
+    for (NSString *name in backingEntity.attributesByName.allKeys) {
+        id val = [backingObject valueForKey:name];
+        if (val)
+            attributeValues[name] = val;
+    }
+    NSMutableDictionary *values = [attributeValues mutableCopy];
+    for (NSRelationshipDescription *relationship in backingEntity.relationshipsByName.allValues) {
+        if (!relationship.isToMany) {
+            NSManagedObject *backingDestObject = [backingObject valueForKey:relationship.name];
+            NSString *resourceIdentifier = [backingDestObject valueForKey:kAFIncrementalStoreResourceIdentifierAttributeName];
+            values[relationship.name] = [self objectIDForEntity:backingDestObject.entity withResourceIdentifier:resourceIdentifier];
+        }
+    }
+
+    NSIncrementalStoreNode *node = [[NSIncrementalStoreNode alloc] initWithObjectID:objectID withValues:values version:1];
 
     if ([self.HTTPClient respondsToSelector:@selector(shouldFetchRemoteAttributeValuesForObjectWithID:inManagedObjectContext:)] && [self.HTTPClient shouldFetchRemoteAttributeValuesForObjectWithID:objectID inManagedObjectContext:context]) {
         if (attributeValues) {
