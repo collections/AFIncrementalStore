@@ -116,15 +116,15 @@
 ///-----------------------
 
 /**
- Returns an `NSDictionary` or an `NSArray` of `NSDictionaries` containing the representations of the resources found in a response object.
+ Returns an `NSArray` of `NSDictionaries` or `NSArray` of `NSString` containing the representations or resourceIdentifier of the resources found in a response object.
  
- @discussion For example, if `GET /users` returned an `NSDictionary` with an array of users keyed on `"users"`, this method would return the keyed array. Conversely, if `GET /users/123` returned a dictionary with all of the atributes of the requested user, this method would simply return that dictionary.
+ @discussion For example, if `GET /users` returned an `NSDictionary` with an array of users keyed on `"users"`, this method would return the keyed array. Conversely, if `GET /users/123` returned a dictionary with all of the atributes of the requested user, this method would simply return that dictionary wrapped inside an array.
 
  @param responseObject The response object returned from the server.
  
- @return An `NSDictionary` or an `NSArray` of `NSDictionaries` containing the resource representations.
+ @return An `NSArray` of `NSDictionaries` or `NSStrings` containing the resource representations / resource identifiers.
  */
-- (id)representationOrArrayOfRepresentationsFromResponseObject:(id)responseObject;
+- (NSArray *)representationsFromResponseObject:(id)responseObject;
 
 /**
  Returns an `NSDictionary` containing the representations of associated objects found within the representation of a response object, keyed by their relationship name.
@@ -137,7 +137,7 @@
  
  @return An `NSDictionary` containing representations of relationships, keyed by relationship name.
  */
-- (NSDictionary *)representationsForRelationshipsFromRepresentation:(NSDictionary *)representation
+- (NSDictionary *)representationsForRelationshipsFromRepresentation:(id)representation
                                                            ofEntity:(NSEntityDescription *)entity
                                                        fromResponse:(NSHTTPURLResponse *)response;
 
@@ -146,13 +146,13 @@
  
  @discussion For example, if `GET /posts` returns a collection of posts, the resource identifier for any particular one might be its URL-safe "slug" or parameter string, or perhaps its numeric id.  For example: `/posts/123` might be a resource identifier for a particular post.
  
- @param representation The resource representation.
+ @param representation The resource representation. `NSDictionary` or `NSString`
  @param entity The entity for the representation.
  @param response The HTTP response for the resource request.
  
  @return An `NSString` resource identifier for the resource.
  */
-- (NSString *)resourceIdentifierForRepresentation:(NSDictionary *)representation
+- (NSString *)resourceIdentifierForRepresentation:(id)representation
                                          ofEntity:(NSEntityDescription *)entity
                                      fromResponse:(NSHTTPURLResponse *)response;
 
@@ -167,7 +167,7 @@
  
  @return An `NSDictionary` containing the attributes for a managed object. 
  */
-- (NSDictionary *)attributesForRepresentation:(NSDictionary *)representation
+- (NSDictionary *)attributesForRepresentation:(id)representation
                                      ofEntity:(NSEntityDescription *)entity
                                  fromResponse:(NSHTTPURLResponse *)response;
 
@@ -227,7 +227,7 @@
  Returns the attributes representation of an entity from the specified managed object. This method is used to get the attributes of the representation from its managed object.
  Used for entity inheritance. Return name of subentity if desired by inspecting representation and suggestedEntity
  */
-- (NSEntityDescription *)entityForRepresentation:(NSDictionary *)representation
+- (NSEntityDescription *)entityForRepresentation:(id)representation
                                    suggestEntity:(NSEntityDescription *)suggestedEntity;
 
 /**
