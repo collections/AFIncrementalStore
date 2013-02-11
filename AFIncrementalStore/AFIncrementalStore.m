@@ -112,6 +112,14 @@ static int AFDelta = 2;
 
 #pragma mark -
 
+- (void)refreshObject:(NSManagedObject *)managedObject {
+    if (!managedObject.isFault) {
+        [managedObject.managedObjectContext refreshObject:managedObject
+                                             mergeChanges:NO];
+        [managedObject willAccessValueForKey:nil];
+    }
+}
+
 - (void)notifyManagedObjectContext:(NSManagedObjectContext *)context
              aboutRequestOperation:(AFHTTPRequestOperation *)operation
                    forFetchRequest:(NSFetchRequest *)fetchRequest
@@ -357,10 +365,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                         NSManagedObjectID *objectID = [self objectIDForEntity:backingObject.entity withResourceIdentifier:resourceIdentifier];
                         NSManagedObject *managedObject = [context existingObjectWithID:objectID error:NULL];
                         if (managedObject) {
-                            if (!managedObject.isFault) {
-                                [context refreshObject:managedObject mergeChanges:NO];
-                                [managedObject willAccessValueForKey:nil];
-                            }
+                            [self refreshObject:managedObject];
                             [fetchedObjects addObject:managedObject];
                         }
                     }
@@ -472,11 +477,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                 [insertedObject willChangeValueForKey:@"objectID"];
                 [context obtainPermanentIDsForObjects:[NSArray arrayWithObject:insertedObject] error:nil];
                 [insertedObject didChangeValueForKey:@"objectID"];
-                
-                if (!insertedObject.isFault) {
-                    [context refreshObject:insertedObject mergeChanges:NO];
-                    [insertedObject willAccessValueForKey:nil];
-                }
+                [self refreshObject:insertedObject];
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Insert Error: %@", error);
             }];
@@ -508,16 +509,10 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     [self updateBackingObject:backingObject withAttributeAndRelationshipValuesFromManagedObject:updatedObject];
                     [backingContext save:nil];
                 }];
-                if (!updatedObject.isFault) {
-                    [context refreshObject:updatedObject mergeChanges:NO];
-                    [updatedObject willAccessValueForKey:nil];
-                }
+                [self refreshObject:updatedObject];
             } failure:^(AFHTTPRequestOperation *operation, NSError *error) {
                 NSLog(@"Update Error: %@", error);
-                if (!updatedObject.isFault) {
-                    [context refreshObject:updatedObject mergeChanges:NO];
-                    [updatedObject willAccessValueForKey:nil];
-                }
+                [self refreshObject:updatedObject];
             }];
             NSLog(@"UPDATE %@+%@", updatedObject.entity.name, updatedObject.af_resourceIdentifier);
             [mutableOperations addObject:operation];
@@ -723,10 +718,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     }
                     [context performBlockAndWait:^{
                         NSManagedObject *managedObject = [context existingObjectWithID:objectID error:error];
-                        if (!managedObject.isFault) {
-                            [context refreshObject:managedObject mergeChanges:NO];
-                            [managedObject willAccessValueForKey:nil];
-                        }
+                        [self refreshObject:managedObject];
                     }];
                     [_refreshingObjects performSelector:@selector(removeObject:) withObject:requestHash afterDelay:AFDelta];
                     NSLog(@"Remotely fulfill object %@", requestHash);
@@ -785,10 +777,7 @@ withAttributeAndRelationshipValuesFromManagedObject:(NSManagedObject *)managedOb
                     NSLog(@"Remotely fulfill relationship  %@", requestHash);
                     [context performBlockAndWait:^{
                         NSManagedObject *managedObject = [context existingObjectWithID:objectID error:NULL];
-                        if (!managedObject.isFault) {
-                            [context refreshObject:managedObject mergeChanges:NO];
-                            [managedObject willAccessValueForKey:nil];
-                        }
+                        [self refreshObject:managedObject];
                     }];
                     // TODO: FIX potential race conditions when not on main thread.
                     [_refreshingRelationships performSelector:@selector(removeObject:) withObject:requestHash afterDelay:AFDelta];
