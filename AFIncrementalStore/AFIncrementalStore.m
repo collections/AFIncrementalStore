@@ -115,7 +115,7 @@ static int AFDelta = 2;
 - (void)refreshObject:(NSManagedObject *)managedObject {
     if (!managedObject.isFault) {
         [managedObject.managedObjectContext refreshObject:managedObject
-                                             mergeChanges:NO];
+                                             mergeChanges:managedObject.hasChanges];
         [managedObject willAccessValueForKey:nil];
     }
 }
